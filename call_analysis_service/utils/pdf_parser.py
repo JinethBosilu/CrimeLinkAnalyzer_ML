@@ -8,18 +8,21 @@ def parse_call_records(pdf_path):
     Expected format: Each line contains call details like:
     "2024-01-15 10:30:45 | +94771234567 | Outgoing | 00:05:23"
     
-    Returns list of call records:
+    Returns list of call records with direction detection:
     [
         {
             'timestamp': '2024-01-15T10:30:45',
             'phone_number': '+94771234567',
-            'call_type': 'Outgoing',
-            'duration': '00:05:23'
+            'call_type': 'Outgoing',  # 'Incoming' or 'Outgoing'
+            'direction': 'outgoing',   # Normalized direction
+            'duration': '00:05:23',
+            'main_number': '+94713268081'  # MSISON/subscriber number
         },
         ...
     ]
     """
     call_records = []
+    main_number = None
     
     try:
         with open(pdf_path, 'rb') as file:
@@ -33,11 +36,29 @@ def parse_call_records(pdf_path):
                     # Try multiple patterns to extract call data
                     record = extract_call_data(line)
                     if record:
+                        # Normalize phone number
+                        record['phone_number'] = normalize_phone_number(record['phone_number'])
+                        
+                        # Detect and normalize direction
+                        record['direction'] = detect_call_direction(record.get('call_type', ''))
+                        
+                        # Store main number if found
+                        if record.get('main_number'):
+                            record['main_number'] = normalize_phone_number(record['main_number'])
+                            if not main_number:
+                                main_number = record['main_number']
+                        
                         call_records.append(record)
     
     except Exception as e:
         print(f"Error parsing PDF: {str(e)}")
         raise
+    
+    # Set main_number for all records if we found one
+    if main_number:
+        for record in call_records:
+            if 'main_number' not in record or not record['main_number']:
+                record['main_number'] = main_number
     
     return call_records
 
@@ -139,14 +160,49 @@ def extract_call_data(line):
 def normalize_phone_number(phone):
     """
     Normalize phone numbers to consistent format
+    Handles Sri Lankan numbers: +94, 0, or 94 prefixes
     """
+    if not phone:
+        return phone
+        
     # Remove all non-digit characters except +
     phone = re.sub(r'[^\d+]', '', phone)
     
-    # Add +94 if it's a local number starting with 0
-    if phone.startswith('0'):
+    # Handle Sri Lankan phone numbers
+    if phone.startswith('0') and len(phone) == 10:
+        # Local format: 0771234567 -> +94771234567
         phone = '+94' + phone[1:]
-    elif not phone.startswith('+'):
+    elif phone.startswith('94') and not phone.startswith('+'):
+        # Missing + prefix: 94771234567 -> +94771234567
+        phone = '+' + phone
+    elif not phone.startswith('+') and len(phone) >= 9:
+        # International format without +
         phone = '+' + phone
     
     return phone
+
+
+def detect_call_direction(call_type):
+    """
+    Detect and normalize call direction
+    
+    Args:
+        call_type: String indicating call type (Incoming, Outgoing, IN, OUT, etc.)
+        
+    Returns:
+        'incoming' or 'outgoing' (lowercase normalized)
+    """
+    if not call_type:
+        return 'unknown'
+    
+    call_type_lower = call_type.lower().strip()
+    
+    # Map various formats to normalized direction
+    if call_type_lower in ['incoming', 'in', 'received', 'inbound']:
+        return 'incoming'
+    elif call_type_lower in ['outgoing', 'out', 'dialed', 'outbound', 'called']:
+        return 'outgoing'
+    elif call_type_lower in ['missed', 'miss']:
+        return 'missed'
+    else:
+        return 'unknown'

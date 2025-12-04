@@ -30,6 +30,7 @@ from pathlib import Path
 from utils.pdf_parser import parse_call_records
 from utils.network_analyzer import analyze_call_network
 from utils.database import get_criminal_info, store_analysis_result
+from utils.session_manager import session_manager
 
 # Configure logging
 logging.basicConfig(
@@ -112,19 +113,42 @@ class NetworkGraph(BaseModel):
 
 
 class AnalysisResult(BaseModel):
-    """Complete analysis result"""
-    analysis_id: str
-    status: str
-    timestamp: str
-    file_name: str
+    """Complete analysis result for single PDF"""
+    pdf_filename: str
+    main_number: str
     total_calls: int
+    total_incoming: int
+    total_outgoing: int
     unique_numbers: List[str]
+    incoming_graph: Dict
+    outgoing_graph: Dict
     call_frequency: Dict[str, int]
     time_pattern: Dict[str, int]
     common_contacts: List[Dict]
-    network_graph: Dict
     criminal_matches: List[CriminalMatch]
     risk_score: int = Field(..., ge=0, le=100, description="Risk score (0-100)")
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class BatchAnalysisResponse(BaseModel):
+    """Response for batch analysis"""
+    session_id: str
+    status: str
+    message: str
+    total_pdfs: int
+    analyses: List[AnalysisResult]
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class SessionAnalysisResponse(BaseModel):
+    """Response when retrieving session analyses"""
+    session_id: str
+    total_analyses: int
+    analyses: List[AnalysisResult]
     
     class Config:
         arbitrary_types_allowed = True
@@ -164,9 +188,15 @@ async def root():
         "documentation": "/docs",
         "endpoints": {
             "health": "/health",
-            "call_analysis": "/analyze",
-            "results": "/results/{analysis_id}",
-            "list_all": "/results"
+            "batch_analysis": "/analyze/batch",
+            "session_analysis": "/analysis/{session_id}",
+            "delete_session": "/analysis/{session_id}"
+        },
+        "features": {
+            "separate_incoming_outgoing_graphs": True,
+            "multi_pdf_support": True,
+            "session_based_storage": True,
+            "auto_cleanup_30_min": True
         },
         "future_services": [
             "Facial Recognition (UC-102)",
@@ -190,6 +220,169 @@ async def health_check():
         timestamp=datetime.utcnow().isoformat(),
         version="2.0.0"
     )
+
+
+@app.post(
+    "/analyze/batch",
+    response_model=BatchAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Call Analysis"],
+    summary="Analyze multiple call record PDFs",
+    description="""
+    Upload multiple PDF files for batch analysis with session-based storage.
+    
+    **Process:**
+    1. Creates a new session
+    2. Processes each PDF separately
+    3. Generates incoming and outgoing graphs per PDF
+    4. Returns session_id to retrieve results later
+    
+    **Features:**
+    - Multi-PDF upload support
+    - Separate incoming/outgoing network graphs
+    - Session expires after 30 minutes of inactivity
+    - No persistent storage (memory only)
+    
+    **Returns:** Session ID and all analysis results
+    """
+)
+async def analyze_batch(files: List[UploadFile] = File(..., description="Multiple PDF files with call records")):
+    """
+    Analyze multiple call record PDFs in batch
+    
+    **UC-101: Enhanced Call Record Analysis with Dual Graphs**
+    """
+    try:
+        # Validate files
+        if not files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No files provided"
+            )
+        
+        if len(files) > 50:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum 50 PDFs per batch. Please split your upload."
+            )
+        
+        # Create new session
+        session_id = session_manager.create_session()
+        logger.info(f"Created session {session_id} for batch analysis of {len(files)} PDFs")
+        
+        analyses = []
+        
+        # Process each PDF
+        for file in files:
+            try:
+                # Validate file type
+                if not file.filename or not file.filename.lower().endswith('.pdf'):
+                    logger.warning(f"Skipping non-PDF file: {file.filename}")
+                    continue
+                
+                # Read file content
+                content = await file.read()
+                
+                # Check file size (16MB limit per file)
+                if len(content) > MAX_FILE_SIZE:
+                    logger.warning(f"Skipping {file.filename}: exceeds {MAX_FILE_SIZE / (1024*1024)}MB limit")
+                    continue
+                
+                # Save uploaded file
+                file_id = str(uuid.uuid4())
+                file_path = UPLOAD_FOLDER / f"{file_id}.pdf"
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                
+                logger.info(f"Processing PDF: {file.filename}")
+                
+                # Parse call records
+                call_records = parse_call_records(str(file_path))
+                
+                if not call_records:
+                    logger.warning(f"No call records found in {file.filename}")
+                    continue
+                
+                logger.info(f"Found {len(call_records)} call records in {file.filename}")
+                
+                # Analyze call network (now returns separate incoming/outgoing graphs)
+                analysis = analyze_call_network(call_records)
+                
+                # Check for criminal matches
+                criminal_matches = []
+                for phone in analysis['unique_numbers']:
+                    criminal = get_criminal_info(phone)
+                    if criminal:
+                        criminal_matches.append({
+                            'phone': phone,
+                            'criminal_id': criminal['id'],
+                            'name': criminal['name'],
+                            'nic': criminal['nic'],
+                            'crime_history': criminal['crimes']
+                        })
+                
+                # Calculate risk score
+                risk_score = calculate_risk_score(analysis, criminal_matches)
+                
+                # Prepare analysis result
+                analysis_result = {
+                    'pdf_filename': file.filename,
+                    'main_number': analysis['main_number'],
+                    'total_calls': analysis['total_calls'],
+                    'total_incoming': analysis['total_incoming'],
+                    'total_outgoing': analysis['total_outgoing'],
+                    'unique_numbers': analysis['unique_numbers'],
+                    'incoming_graph': analysis['incoming_graph'],
+                    'outgoing_graph': analysis['outgoing_graph'],
+                    'call_frequency': analysis['call_frequency'],
+                    'time_pattern': analysis['time_pattern'],
+                    'common_contacts': analysis['common_contacts'],
+                    'criminal_matches': criminal_matches,
+                    'risk_score': risk_score
+                }
+                
+                analyses.append(analysis_result)
+                
+                # Cleanup uploaded file
+                try:
+                    file_path.unlink()
+                except:
+                    pass
+                
+                logger.info(f"Completed analysis for {file.filename}")
+                
+            except Exception as e:
+                logger.error(f"Error processing {file.filename}: {str(e)}")
+                continue
+        
+        if not analyses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid call records found in any of the uploaded PDFs"
+            )
+        
+        # Store analyses in session
+        for analysis in analyses:
+            session_manager.add_analysis(session_id, analysis)
+        
+        logger.info(f"Session {session_id}: Completed batch analysis of {len(analyses)} PDFs")
+        
+        return BatchAnalysisResponse(
+            session_id=session_id,
+            status='completed',
+            message=f'Successfully analyzed {len(analyses)} PDF(s)',
+            total_pdfs=len(analyses),
+            analyses=analyses
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Batch analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch analysis failed: {str(e)}"
+        )
 
 
 @app.post(
@@ -396,14 +589,69 @@ async def list_all_results():
     )
 
 
+@app.get(
+    "/analysis/{session_id}",
+    response_model=SessionAnalysisResponse,
+    tags=["Call Analysis"],
+    summary="Get all analyses for a session",
+    description="Retrieve all analysis results stored in a session"
+)
+async def get_session_analyses(session_id: str):
+    """
+    Get all analyses for a session
+    
+    Returns all PDF analyses associated with the session.
+    Session expires after 30 minutes of inactivity.
+    """
+    logger.info(f"Retrieving analyses for session: {session_id}")
+    
+    analyses = session_manager.get_analyses(session_id)
+    
+    if analyses is None:
+        logger.warning(f"Session not found or expired: {session_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found or has expired"
+        )
+    
+    return SessionAnalysisResponse(
+        session_id=session_id,
+        total_analyses=len(analyses),
+        analyses=analyses
+    )
+
+
+@app.delete(
+    "/analysis/{session_id}",
+    tags=["Call Analysis"],
+    summary="Delete session",
+    description="Remove session and all associated analyses (on logout)"
+)
+async def delete_session(session_id: str):
+    """
+    Delete session and all analyses (called on investigator logout)
+    """
+    success = session_manager.delete_session(session_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found"
+        )
+    
+    logger.info(f"Deleted session: {session_id}")
+    
+    return {"message": f"Session {session_id} deleted successfully"}
+
+
 @app.delete(
     "/results/{analysis_id}",
-    tags=["Call Analysis"],
-    summary="Delete analysis results",
-    description="Remove analysis results from memory (admin only)"
+    tags=["Call Analysis (Legacy)"],
+    summary="Delete analysis results (Legacy)",
+    description="Remove analysis results from memory (admin only) - DEPRECATED"
 )
 async def delete_analysis(analysis_id: str):
-    """Delete analysis results (for cleanup/testing)"""
+    """Delete analysis results (for cleanup/testing) - LEGACY ENDPOINT"""
     if analysis_id not in analysis_results:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -490,6 +738,8 @@ async def startup_event():
     logger.info(f"Upload folder: {UPLOAD_FOLDER.absolute()}")
     logger.info(f"Results folder: {RESULTS_FOLDER.absolute()}")
     logger.info("API Documentation: http://localhost:5001/docs")
+    logger.info("Starting session cleanup thread (30 min timeout)...")
+    session_manager.start_cleanup_thread()
     logger.info("=" * 60)
 
 
@@ -497,7 +747,9 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("CrimeLink Analyzer - ML Services Shutting Down...")
-    # TODO: Close database connections, Redis, etc.
+    logger.info("Stopping session cleanup thread...")
+    session_manager.stop_cleanup_thread()
+    logger.info("Shutdown complete")
 
 
 # ============= Run Server =============
