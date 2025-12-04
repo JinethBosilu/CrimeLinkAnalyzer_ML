@@ -119,12 +119,16 @@ def build_directional_graph(call_records, main_number, direction):
             'total_calls': 0
         }
     
-    # Count calls per contact
+    # Count calls per contact (handles duplicates automatically)
     contact_counts = defaultdict(int)
     for record in call_records:
-        phone = record['phone_number']
-        if phone != main_number:
-            contact_counts[phone] += 1
+        try:
+            phone = record.get('phone_number')
+            if phone and phone != main_number:
+                contact_counts[phone] += 1
+        except Exception as e:
+            print(f"DEBUG: Error counting call for record: {str(e)}")
+            continue
     
     # Build nodes
     nodes = []
