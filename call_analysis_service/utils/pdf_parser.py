@@ -8,36 +8,69 @@ def parse_call_records(pdf_path):
     Expected format: Each line contains call details like:
     "2024-01-15 10:30:45 | +94771234567 | Outgoing | 00:05:23"
     
-    Returns list of call records:
+    Returns list of call records with direction detection:
     [
         {
             'timestamp': '2024-01-15T10:30:45',
             'phone_number': '+94771234567',
-            'call_type': 'Outgoing',
-            'duration': '00:05:23'
+            'call_type': 'Outgoing',  # 'Incoming' or 'Outgoing'
+            'direction': 'outgoing',   # Normalized direction
+            'duration': '00:05:23',
+            'main_number': '+94713268081'  # MSISON/subscriber number
         },
         ...
     ]
     """
     call_records = []
+    main_number = None
+    skipped_lines = 0
     
     try:
         with open(pdf_path, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
             
-            for page in pdf_reader.pages:
+            for page_num, page in enumerate(pdf_reader.pages):
                 text = page.extract_text()
                 lines = text.split('\n')
                 
                 for line in lines:
-                    # Try multiple patterns to extract call data
-                    record = extract_call_data(line)
-                    if record:
-                        call_records.append(record)
+                    try:
+                        # Try multiple patterns to extract call data
+                        record = extract_call_data(line)
+                        if record:
+                            # Normalize phone number
+                            record['phone_number'] = normalize_phone_number(record['phone_number'])
+                            
+                            # Detect and normalize direction
+                            record['direction'] = detect_call_direction(record.get('call_type', ''))
+                            
+                            # Store main number if found
+                            if record.get('main_number'):
+                                record['main_number'] = normalize_phone_number(record['main_number'])
+                                if not main_number:
+                                    main_number = record['main_number']
+                                    print(f"DEBUG: Found main number (MSISON): {main_number}")
+                            
+                            call_records.append(record)
+                        else:
+                            # Check if line might contain call data but didn't match
+                            if any(keyword in line.lower() for keyword in ['incoming', 'outgoing', 'missed']) and any(c.isdigit() for c in line):
+                                skipped_lines += 1
+                    except Exception as e:
+                        print(f"DEBUG: Error parsing line: {str(e)[:100]}")
+                        continue
     
     except Exception as e:
         print(f"Error parsing PDF: {str(e)}")
         raise
+    
+    # Set main_number for all records if we found one
+    if main_number:
+        for record in call_records:
+            if 'main_number' not in record or not record['main_number']:
+                record['main_number'] = main_number
+    
+    print(f"DEBUG: Parsed {len(call_records)} records, skipped {skipped_lines} potential lines, main number: {main_number}")
     
     return call_records
 
@@ -55,9 +88,14 @@ def extract_call_data(line):
     # Pattern 3: Phone number with date and duration
     pattern3 = r'(\d{2}-\d{2}-\d{4})\s+(\d{2}:\d{2})\s*[,\s]+(\+?\d{10,15})\s*[,\s]+(Incoming|Outgoing|Missed)\s*[,\s]+(\d+:\d+:\d+)'
     
-    # Pattern 4: Sri Lankan format "0713268081 0715689865 0713268081 Incoming 2024-09-20 08:43:14 15"
-    # Format: a_number b_number msison event_type date time duration
-    pattern4 = r'(\d{10})\s+(\d{10})\s+(\d{10})\s+(Incoming|Outgoing|Missed)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(\d+)'
+    # Pattern 4: Sri Lankan CDR table format with | separators
+    # Format: | msison | a_number | b_number | event_type | date | time | duration | ...
+    pattern4_table = r'\|\s*(\d{9,11})\s*\|\s*(\d{9,11})\s*\|\s*(\d{9,11})\s*\|\s*(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\d+)'
+    
+    # Pattern 5: Sri Lankan format with tabs or multiple spaces (common in PDFs)
+    # Format: msison\ta_number\tb_number\tevent_type\tdate\ttime\tduration
+    # Also handles space-separated: msison  a_number  b_number  event_type  date  time  duration
+    pattern5_tabs = r'(\d{9,11})[\s\t]+(\d{9,11})[\s\t]+(\d{9,11})[\s\t]+(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)[\s\t]+(\d{4}-\d{2}-\d{2})[\s\t]+(\d{2}:\d{2}:\d{2})[\s\t]+(\d+)'
     
     match = re.search(pattern1, line)
     if match:
@@ -99,13 +137,51 @@ def extract_call_data(line):
             'duration': match.group(5)
         }
     
-    # Pattern 4: Sri Lankan telecom format
-    match = re.search(pattern4, line)
+    # Pattern 4: Sri Lankan CDR table format (with | separators)
+    # | MSISON | a_number | b_number | Event Type | Date | Time | Duration | ...
+    match = re.search(pattern4_table, line)
     if match:
-        a_number = match.group(1)  # Calling party
-        b_number = match.group(2)  # Called party
-        msison = match.group(3)     # Main subscriber number
-        event_type = match.group(4) # Incoming/Outgoing
+        msison = match.group(1)      # Main subscriber number (column 1)
+        a_number = match.group(2)    # Calling party (column 2)
+        b_number = match.group(3)    # Called party (column 3)
+        event_type = match.group(4)  # Incoming/Outgoing (column 4)
+        date = match.group(5)         # Date (column 5)
+        time = match.group(6)         # Time (column 6)
+        duration_seconds = int(match.group(7))  # Duration in seconds (column 7)
+        
+        # Convert duration from seconds to HH:MM:SS
+        hours = duration_seconds // 3600
+        minutes = (duration_seconds % 3600) // 60
+        seconds = duration_seconds % 60
+        duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        
+        timestamp = f"{date}T{time}"
+        
+        # Determine the other party number based on event type
+        # For table format: MSISON is always column 1
+        # Incoming: a_number called MSISON (other party = a_number)
+        # Outgoing: MSISON called b_number (other party = b_number)
+        if event_type.lower() == 'incoming':
+            other_party = a_number
+        else:  # Outgoing
+            other_party = b_number
+        
+        return {
+            'timestamp': timestamp,
+            'phone_number': other_party,
+            'call_type': event_type,
+            'duration': duration,
+            'main_number': msison
+        }
+    
+    # Pattern 5: Sri Lankan format with tabs/spaces (most common in PDF tables)
+    # msison  a_number  b_number  event_type  date  time  duration
+    match = re.search(pattern5_tabs, line)
+    if match:
+        msison = match.group(1)
+        a_number = match.group(2)
+        b_number = match.group(3)
+        event_type = match.group(4)
         date = match.group(5)
         time = match.group(6)
         duration_seconds = int(match.group(7))
@@ -118,13 +194,14 @@ def extract_call_data(line):
         
         timestamp = f"{date}T{time}"
         
-        # Determine the other party number based on event type
-        # For Incoming: a_number is the caller (other party)
-        # For Outgoing: b_number is the person being called (other party)
-        if event_type == 'Incoming':
-            other_party = a_number if a_number != msison else b_number
+        # Determine the other party
+        # For tab-separated format: MSISON is always first column
+        # Incoming: a_number called MSISON (other party = a_number)
+        # Outgoing: MSISON called b_number (other party = b_number)
+        if event_type.lower() == 'incoming':
+            other_party = a_number
         else:  # Outgoing
-            other_party = b_number if b_number != msison else a_number
+            other_party = b_number
         
         return {
             'timestamp': timestamp,
@@ -139,14 +216,49 @@ def extract_call_data(line):
 def normalize_phone_number(phone):
     """
     Normalize phone numbers to consistent format
+    Handles Sri Lankan numbers: +94, 0, or 94 prefixes
     """
+    if not phone:
+        return phone
+        
     # Remove all non-digit characters except +
     phone = re.sub(r'[^\d+]', '', phone)
     
-    # Add +94 if it's a local number starting with 0
-    if phone.startswith('0'):
+    # Handle Sri Lankan phone numbers
+    if phone.startswith('0') and len(phone) == 10:
+        # Local format: 0771234567 -> +94771234567
         phone = '+94' + phone[1:]
-    elif not phone.startswith('+'):
+    elif phone.startswith('94') and not phone.startswith('+'):
+        # Missing + prefix: 94771234567 -> +94771234567
+        phone = '+' + phone
+    elif not phone.startswith('+') and len(phone) >= 9:
+        # International format without +
         phone = '+' + phone
     
     return phone
+
+
+def detect_call_direction(call_type):
+    """
+    Detect and normalize call direction
+    
+    Args:
+        call_type: String indicating call type (Incoming, Outgoing, IN, OUT, etc.)
+        
+    Returns:
+        'incoming' or 'outgoing' (lowercase normalized)
+    """
+    if not call_type:
+        return 'unknown'
+    
+    call_type_lower = call_type.lower().strip()
+    
+    # Map various formats to normalized direction
+    if call_type_lower in ['incoming', 'in', 'received', 'inbound']:
+        return 'incoming'
+    elif call_type_lower in ['outgoing', 'out', 'dialed', 'outbound', 'called']:
+        return 'outgoing'
+    elif call_type_lower in ['missed', 'miss']:
+        return 'missed'
+    else:
+        return 'unknown'
