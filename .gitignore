@@ -10,6 +10,19 @@ __pycache__/
 uploads/
 results/
 
+# Ignore stored images (local file storage)
+facial_recognition_service/stored_images/
+facial_recognition_service/suspect_images/
+facial_recognition_service/uploads/
+
+# Ignore test files
+facial_recognition_service/test_*.py
+facial_recognition_service/*_test.py
+facial_recognition_service/bulk_upload_from_folder.py
+facial_recognition_service/upload_test_data.py
+facial_recognition_service/create_photos_table.py
+facial_recognition_service/direct_upload.py
+
 # Ignore environment variables
 .env
 

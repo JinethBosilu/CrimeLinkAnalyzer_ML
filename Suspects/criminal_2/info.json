@@ -1,0 +1,30 @@
+{
+  "name": "Namal Rajapaksa",
+  "nic": "198611100067",
+  "risk_level": "medium",
+  "crime_history": {
+    "total_crimes": 3,
+    "last_crime_date": "2024-10-05",
+    "crime_types": ["fraud", "tax evasion", "forgery"],
+    "records": [
+      {
+        "type": "Fraud",
+        "date": "2024-10-05",
+        "location": "Colombo",
+        "description": "Financial fraud case involving shell companies"
+      },
+      {
+        "type": "Tax Evasion",
+        "date": "2024-07-22",
+        "location": "Kandy",
+        "description": "Systematic tax evasion through offshore accounts"
+      },
+      {
+        "type": "Forgery",
+        "date": "2024-04-18",
+        "location": "Gampaha",
+        "description": "Document forgery related to property transactions"
+      }
+    ]
+  }
+}

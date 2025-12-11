@@ -1,0 +1,48 @@
+{
+  "name": "Ranil Wickremesinghe",
+  "nic": "194903030056",
+  "risk_level": "critical",
+  "crime_history": {
+    "total_crimes": 6,
+    "last_crime_date": "2024-12-01",
+    "crime_types": ["treason", "corruption", "abuse of power", "financial fraud"],
+    "records": [
+      {
+        "type": "Treason",
+        "date": "2024-12-01",
+        "location": "Presidential Secretariat",
+        "description": "Acts against national security and sovereignty"
+      },
+      {
+        "type": "Corruption",
+        "date": "2024-09-15",
+        "location": "Colombo",
+        "description": "Major corruption scandal involving international contracts"
+      },
+      {
+        "type": "Abuse of Power",
+        "date": "2024-06-30",
+        "location": "Temple Trees",
+        "description": "Misuse of executive powers for personal gain"
+      },
+      {
+        "type": "Financial Fraud",
+        "date": "2024-03-20",
+        "location": "Central Bank",
+        "description": "Bond scam involvement and financial irregularities"
+      },
+      {
+        "type": "Money Laundering",
+        "date": "2024-01-10",
+        "location": "Offshore",
+        "description": "International money laundering network"
+      },
+      {
+        "type": "Embezzlement",
+        "date": "2023-11-05",
+        "location": "Colombo",
+        "description": "Embezzlement of state resources"
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "Mahinda Rajapaksa",
+  "nic": "194511180045",
+  "risk_level": "high",
+  "crime_history": {
+    "total_crimes": 4,
+    "last_crime_date": "2024-11-20",
+    "crime_types": ["corruption", "financial fraud", "embezzlement"],
+    "records": [
+      {
+        "type": "Corruption",
+        "date": "2024-11-20",
+        "location": "Colombo",
+        "description": "Large-scale corruption allegations involving government contracts"
+      },
+      {
+        "type": "Financial Fraud",
+        "date": "2024-08-15",
+        "location": "Hambantota",
+        "description": "Fraudulent financial transactions related to development projects"
+      },
+      {
+        "type": "Embezzlement",
+        "date": "2024-05-10",
+        "location": "Colombo Fort",
+        "description": "Misappropriation of public funds"
+      },
+      {
+        "type": "Money Laundering",
+        "date": "2024-02-28",
+        "location": "Galle",
+        "description": "Suspected money laundering activities"
+      }
+    ]
+  }
+}
