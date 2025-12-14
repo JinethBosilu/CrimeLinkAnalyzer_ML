@@ -72,7 +72,7 @@ def parse_call_records(pdf_path):
             if 'main_number' not in record or not record['main_number']:
                 record['main_number'] = main_number
 
-                 # ✅ ADD THIS BLOCK RIGHT HERE (before print/return)
+    #  ADD THIS BLOCK RIGHT HERE (before print/return)
     has_location = any(r.get("location") for r in call_records)
     if not has_location:
         cell_rows = extract_cell_table_rows(full_text)
@@ -99,8 +99,8 @@ def extract_call_data(line):
     # Pattern 4 (table with |)
     pattern4_table = r'\|\s*(\d{9,15})\s*\|\s*(\d{9,15})\s*\|\s*(\d{9,15})\s*\|\s*(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\d+)'
 
-    # ✅ Pattern 6 (FULL row with Cell ID + Call Name) — MUST RUN BEFORE pattern5
-    # msison a_number b_number event_type date time duration cell_id call_name ...
+    # Pattern 6 (FULL row with Cell ID + Call Name) — MUST RUN BEFORE pattern5
+    # msison a_number b_number event_type date time duration cell_id call_name
     pattern6_full = (
         r'(\+?\d{9,15})[\s\t]+(\+?\d{9,15})[\s\t]+(\+?\d{9,15})[\s\t]+'
         r'(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)[\s\t]+'
@@ -111,7 +111,7 @@ def extract_call_data(line):
     # Pattern 5 (tabs/spaces)
     pattern5_tabs = r'(\d{9,15})[\s\t]+(\d{9,15})[\s\t]+(\d{9,15})[\s\t]+(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)[\s\t]+(\d{4}-\d{2}-\d{2})[\s\t]+(\d{2}:\d{2}:\d{2})[\s\t]+(\d+)'
 
-    # ---------- Pattern 1 ----------
+    #  Pattern 1 
     match = re.search(pattern1, line)
     if match:
         return {
@@ -121,7 +121,7 @@ def extract_call_data(line):
             'duration': match.group(4)
         }
 
-    # ---------- Pattern 2 ----------
+    #  Pattern 2 
     match = re.search(pattern2, line)
     if match:
         date_parts = match.group(1).split('/')
@@ -138,7 +138,7 @@ def extract_call_data(line):
             'duration': duration
         }
 
-    # ---------- Pattern 3 ----------
+    #  Pattern 3
     match = re.search(pattern3, line)
     if match:
         date_parts = match.group(1).split('-')
@@ -152,7 +152,7 @@ def extract_call_data(line):
             'duration': match.group(5)
         }
 
-    # ---------- Pattern 4 ----------
+    #  Pattern 4 
     match = re.search(pattern4_table, line)
     if match:
         msison = match.group(1)
@@ -179,7 +179,7 @@ def extract_call_data(line):
             'main_number': msison
         }
 
-    # ✅ ---------- Pattern 6 (FULL) ----------
+    # Pattern 6 (FULL) 
     match = re.search(pattern6_full, line)
     if match:
         msison = match.group(1)
@@ -190,7 +190,7 @@ def extract_call_data(line):
         time = match.group(6)
         duration_seconds = int(match.group(7))
         cell_id = match.group(8)
-        call_name = match.group(9)  # ✅ location
+        call_name = match.group(9)  # location
 
         hours = duration_seconds // 3600
         minutes = (duration_seconds % 3600) // 60
@@ -207,10 +207,10 @@ def extract_call_data(line):
             "duration": duration,
             "main_number": msison,
             "cell_id": cell_id,
-            "location": call_name,  # ✅ IMPORTANT
+            "location": call_name,  # IMPORTANT
         }
 
-    # ---------- Pattern 5 ----------
+    # Pattern 5 
     match = re.search(pattern5_tabs, line)
     if match:
         msison = match.group(1)
@@ -238,6 +238,7 @@ def extract_call_data(line):
         }
 
     return None
+
 def extract_cell_table_rows(full_text: str):
     """
     Extracts: Cell ID  Call Name  IMEI  IMSI
@@ -269,8 +270,6 @@ def attach_locations_by_row_index(call_records: list, cell_rows: list):
         call_records[i]["location"] = cell_rows[i]["location"]
 
     return call_records
-
-
 
 
 def normalize_phone_number(phone):

@@ -14,8 +14,6 @@ Future services to be added:
 - Crime hotspot analysis (UC-103)
 - Predictive crime modeling
 """
-
-# app_fastapi.py
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,7 +23,7 @@ import uuid
 from datetime import datetime
 import logging
 from pathlib import Path
-from utils.location_analyzer import compute_location_periods
+
 
 
 # Import utilities
@@ -33,6 +31,7 @@ from utils.pdf_parser import parse_call_records
 from utils.network_analyzer import analyze_call_network
 from utils.database import get_criminal_info, store_analysis_result
 from utils.session_manager import session_manager
+from utils.location_analyzer import compute_location_periods
 
 # Configure logging
 logging.basicConfig(
@@ -124,7 +123,7 @@ class AnalysisResult(BaseModel):
     time_pattern: Dict[str, int] = Field(default_factory=dict)
     common_contacts: List[Dict] = Field(default_factory=list)
 
-    # ✅ FIX: never missing now
+    #  FIX: never missing now
     criminal_matches: List[CriminalMatch] = Field(default_factory=list)
 
     risk_score: int = Field(..., ge=0, le=100, description="Risk score (0-100)")
@@ -264,7 +263,7 @@ async def analyze_batch(files: List[UploadFile] = File(..., description="Multipl
                 location_analysis = compute_location_periods(call_records, gap_minutes=30)
 
 
-                # ✅ FIX: include criminal_matches always
+                #  FIX: include criminal_matches always
                 analysis_result = {
                     "pdf_filename": file.filename,
                     "main_number": analysis.get("main_number") or (call_records[0].get("main_number") if call_records else ""),
@@ -277,7 +276,7 @@ async def analyze_batch(files: List[UploadFile] = File(..., description="Multipl
                     "call_frequency": analysis.get("call_frequency", {}),
                     "time_pattern": analysis.get("time_pattern", {}),
                     "common_contacts": analysis.get("common_contacts", []),
-                    "criminal_matches": criminal_matches,   # ✅ REQUIRED FIELD
+                    "criminal_matches": criminal_matches,   #  REQUIRED FIELD
                     "risk_score": risk_score,
                     "location_analysis": location_analysis,
                     
