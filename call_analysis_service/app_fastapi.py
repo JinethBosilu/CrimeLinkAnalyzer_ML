@@ -260,7 +260,7 @@ async def analyze_batch(files: List[UploadFile] = File(..., description="Multipl
 
                 risk_score = calculate_risk_score(analysis, criminal_matches)
 
-                location_analysis = compute_location_periods(call_records, gap_minutes=30)
+                location_analysis = compute_location_periods(call_records, gap_minutes=180)
 
 
                 #  FIX: include criminal_matches always

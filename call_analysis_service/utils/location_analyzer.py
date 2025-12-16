@@ -10,7 +10,7 @@ def _parse_dt(ts: Optional[str]) -> Optional[datetime]:
     except:
         return None
 
-def compute_location_periods(call_records: List[Dict[str, Any]], gap_minutes: int = 30) -> Dict[str, Any]:
+def compute_location_periods(call_records: List[Dict[str, Any]], gap_minutes: int = 180) -> Dict[str, Any]:
     """
     Timeline-based sessions:
     - Sort by time

@@ -72,7 +72,7 @@ def parse_call_records(pdf_path):
             if 'main_number' not in record or not record['main_number']:
                 record['main_number'] = main_number
 
-    #  ADD THIS BLOCK RIGHT HERE (before print/return)
+
     has_location = any(r.get("location") for r in call_records)
     if not has_location:
         cell_rows = extract_cell_table_rows(full_text)
