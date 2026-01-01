@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime
 from utils.pdf_parser import parse_call_records
 from utils.network_analyzer import analyze_call_network
-from utils.database import get_criminal_info, store_analysis_result
 
 app = Flask(__name__)
 CORS(app)
@@ -64,38 +63,27 @@ def analyze_call_records():
         # Analyze call network
         analysis = analyze_call_network(call_records)
         
-        # Check if any numbers belong to criminals in database
-        criminal_matches = []
-        for phone in analysis['unique_numbers']:
-            criminal = get_criminal_info(phone)
-            if criminal:
-                criminal_matches.append({
-                    'phone': phone,
-                    'criminal_id': criminal['id'],
-                    'name': criminal['name'],
-                    'nic': criminal['nic'],
-                    'crime_history': criminal['crimes']
-                })
-        
-        # Prepare result
+        # Prepare result - just visualization data, no database lookups
         result = {
             'analysis_id': analysis_id,
             'status': 'completed',
             'timestamp': datetime.utcnow().isoformat(),
             'file_name': file.filename,
+            'main_number': analysis['main_number'],
             'total_calls': analysis['total_calls'],
+            'total_incoming': analysis['total_incoming'],
+            'total_outgoing': analysis['total_outgoing'],
             'unique_numbers': analysis['unique_numbers'],
             'call_frequency': analysis['call_frequency'],
             'time_pattern': analysis['time_pattern'],
             'common_contacts': analysis['common_contacts'],
-            'network_graph': analysis['network_graph'],
-            'criminal_matches': criminal_matches,
-            'risk_score': calculate_risk_score(analysis, criminal_matches)
+            'incoming_graph': analysis['incoming_graph'],
+            'outgoing_graph': analysis['outgoing_graph'],
+            'risk_score': calculate_risk_score(analysis)
         }
         
-        # Store result
+        # Store result in memory for retrieval
         analysis_results[analysis_id] = result
-        store_analysis_result(analysis_id, result)
         
         return jsonify({
             'analysis_id': analysis_id,
@@ -137,23 +125,22 @@ def list_all_results():
         ]
     }), 200
 
-def calculate_risk_score(analysis, criminal_matches):
+def calculate_risk_score(analysis):
     """
-    Calculate risk score based on analysis patterns
+    Calculate risk score based on call patterns only
     """
     score = 0
     
     # High number of calls increases risk
     if analysis['total_calls'] > 100:
-        score += 30
+        score += 40
     elif analysis['total_calls'] > 50:
-        score += 20
-    
-    # Criminal matches significantly increase risk
-    score += len(criminal_matches) * 25
+        score += 25
     
     # Many unique contacts increase risk
     if len(analysis['unique_numbers']) > 50:
+        score += 30
+    elif len(analysis['unique_numbers']) > 30:
         score += 20
     
     # Unusual time patterns (late night calls)
@@ -162,7 +149,12 @@ def calculate_risk_score(analysis, criminal_matches):
         if int(hour) >= 22 or int(hour) <= 5
     )
     if late_night_calls > analysis['total_calls'] * 0.3:
-        score += 15
+        score += 20
+    
+    # High frequency to specific numbers
+    max_frequency = max(analysis['call_frequency'].values()) if analysis['call_frequency'] else 0
+    if max_frequency > 20:
+        score += 10
     
     return min(score, 100)  # Cap at 100
 
