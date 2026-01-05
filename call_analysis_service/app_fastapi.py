@@ -104,7 +104,7 @@ class LocationPeriod(BaseModel):
     count: int
 
 class LocationAnalysis(BaseModel):
-    gap_minutes: int = 30
+    gap_minutes: int = 180
     locations: List[LocationPeriod] = Field(default_factory=list)
 
 
