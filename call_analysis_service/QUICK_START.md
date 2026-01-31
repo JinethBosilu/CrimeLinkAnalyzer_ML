@@ -85,8 +85,8 @@ python -m uvicorn app_fastapi:app --port 5001 --reload
 
 1. ✅ Service running? Go to http://localhost:5001/docs
 2. ✅ Try the **GET /health** endpoint (click "Try it out")
-3. ✅ Upload a PDF using **POST /analyze** endpoint
-4. ✅ Read full documentation: `FASTAPI_MIGRATION_GUIDE.md`
+3. ✅ Upload PDFs using **POST /analyze/batch** endpoint
+4. ✅ Get session results via **GET /analysis/{session_id}**
 
 ---
 
