@@ -8,10 +8,10 @@
 
 ```powershell
 # 1. Navigate to service
-cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service"
+cd "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service"
 
 # 2. Install dependencies (first time only)
-pip install fastapi uvicorn python-multipart pydantic PyPDF2 networkx psycopg python-dotenv
+pip install -r requirements_fastapi.txt
 
 # 3. Start service
 python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
@@ -25,12 +25,12 @@ python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
 
 ### Windows PowerShell:
 ```powershell
-cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service" ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
+cd "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service" ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
 ```
 
 ### First Time Setup (One Command):
 ```powershell
-cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service" ; pip install fastapi uvicorn python-multipart pydantic PyPDF2 networkx psycopg python-dotenv ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
+cd "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service" ; pip install -r requirements_fastapi.txt ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
 ```
 
 ---
