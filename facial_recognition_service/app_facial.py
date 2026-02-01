@@ -118,6 +118,22 @@ async def shutdown_event():
 # Pydantic Models
 # ============================================================================
 
+class CrimeRecord(BaseModel):
+    """Single crime record."""
+    type: str
+    date: str
+    location: str
+    description: Optional[str] = None
+
+
+class CrimeHistory(BaseModel):
+    """Crime history information."""
+    total_crimes: int
+    last_crime_date: Optional[str] = None
+    crime_types: List[str] = []
+    records: List[CrimeRecord] = []
+
+
 class MatchResult(BaseModel):
     """Single match result."""
     criminal_id: str
@@ -127,6 +143,7 @@ class MatchResult(BaseModel):
     confidence_level: str = Field(..., description="high, medium, or low")
     risk_level: Optional[str] = None
     photo_url: Optional[str] = None
+    crime_history: Optional[CrimeHistory] = None
 
 
 class AnalysisResponse(BaseModel):
@@ -353,6 +370,33 @@ async def analyze_suspect(
         # Format matches for response
         match_results = []
         for match in matches:
+            # Parse crime_history - pass it directly if already formatted, or format it
+            crime_history = match.get('crime_history')
+            formatted_crime_history = None
+            
+            if crime_history and isinstance(crime_history, dict):
+                # Check if it's already in the expected format (has total_crimes)
+                if 'total_crimes' in crime_history:
+                    # Already formatted from database
+                    formatted_crime_history = {
+                        "total_crimes": crime_history.get('total_crimes', 0),
+                        "last_crime_date": crime_history.get('last_crime_date'),
+                        "crime_types": crime_history.get('crime_types', []),
+                        "records": crime_history.get('records', [])[:5]  # Limit to 5 most recent
+                    }
+                elif 'records' in crime_history:
+                    # Needs formatting
+                    records = crime_history.get('records', [])
+                    crime_types = list(set(r.get('type', '') for r in records if r.get('type')))
+                    last_crime_date = records[0].get('date') if records else None
+                    
+                    formatted_crime_history = {
+                        "total_crimes": len(records),
+                        "last_crime_date": last_crime_date,
+                        "crime_types": crime_types,
+                        "records": records[:5]
+                    }
+            
             match_results.append({
                 "criminal_id": str(match['criminal_id']),
                 "name": match['name'],
@@ -360,7 +404,8 @@ async def analyze_suspect(
                 "similarity": match['similarity_percentage'],
                 "confidence_level": match['confidence_level'],
                 "risk_level": match.get('risk_level'),
-                "photo_url": match.get('photo_url')
+                "photo_url": match.get('photo_url'),
+                "crime_history": formatted_crime_history
             })
         
         # Calculate processing time
@@ -383,6 +428,10 @@ async def analyze_suspect(
         )
         
         logger.info(f"Analysis complete: {len(match_results)} matches found (threshold: {threshold}%)")
+        
+        # Debug: Log match_results with crime_history
+        for m in match_results:
+            logger.info(f"Match: {m.get('name')} - crime_history: {m.get('crime_history')}")
         
         return {
             "analysis_id": analysis_id,

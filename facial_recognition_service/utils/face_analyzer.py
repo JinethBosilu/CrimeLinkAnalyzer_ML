@@ -316,6 +316,7 @@ class FaceAnalyzer:
                     'confidence_level': confidence,
                     'photo_url': criminal.get('photo_url'),
                     'risk_level': criminal.get('risk_level'),
+                    'crime_history': criminal.get('crime_history'),
                 })
         
         # Sort by similarity (descending)

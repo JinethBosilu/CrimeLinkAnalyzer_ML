@@ -226,6 +226,8 @@ class Database:
     
     def get_all_criminals_with_embeddings(self) -> List[Dict[str, Any]]:
         """Get all criminals that have face embeddings stored."""
+        import numpy as np
+        
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -235,11 +237,21 @@ class Database:
                 """)
                 results = cur.fetchall()
                 
-                # Parse embeddings from JSON
+                # Parse embeddings - handle both BYTEA (binary) and JSONB formats
                 for row in results:
                     if row['face_embedding']:
-                        if isinstance(row['face_embedding'], str):
-                            row['face_embedding'] = json.loads(row['face_embedding'])
+                        embedding_data = row['face_embedding']
+                        
+                        # Handle memoryview/bytes (BYTEA format - numpy array bytes)
+                        if isinstance(embedding_data, (memoryview, bytes)):
+                            raw_bytes = bytes(embedding_data)
+                            row['face_embedding'] = np.frombuffer(raw_bytes, dtype=np.float32).tolist()
+                        # Handle string (JSON format)
+                        elif isinstance(embedding_data, str):
+                            row['face_embedding'] = json.loads(embedding_data)
+                        # Handle list (already parsed JSONB)
+                        elif isinstance(embedding_data, list):
+                            pass  # Already in correct format
                 
                 return results
     
@@ -259,7 +271,7 @@ class Database:
         Get all criminals with embeddings in format ready for face matching.
         
         Returns:
-            List of dicts with 'criminal_id', 'name', 'nic', 'embedding', 'photo_url', 'risk_level'
+            List of dicts with 'criminal_id', 'name', 'nic', 'embedding', 'photo_url', 'risk_level', 'crime_history'
         """
         criminals = self.get_all_criminals_with_embeddings()
         result = []
@@ -275,6 +287,7 @@ class Database:
                     'embedding': np.array(embedding, dtype=np.float32),
                     'photo_url': c.get('primary_photo_url'),
                     'risk_level': c.get('risk_level'),
+                    'crime_history': c.get('crime_history'),
                 })
         
         return result
@@ -339,7 +352,8 @@ class Database:
         requested_by: Optional[str] = None,
         user_role: Optional[str] = None,
         ip_address: Optional[str] = None,
-        case_id: Optional[str] = None
+        case_id: Optional[str] = None,
+        match_threshold: float = 0.45
     ) -> int:
         """
         Log a facial recognition request for audit purposes.
@@ -349,18 +363,47 @@ class Database:
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
+                # Convert user_id to integer if possible, otherwise None
+                user_id_int = None
+                if requested_by and requested_by not in ('unknown', 'null', ''):
+                    try:
+                        user_id_int = int(requested_by)
+                    except (ValueError, TypeError):
+                        user_id_int = None
+                
+                # Convert criminal_id to integer if possible
+                criminal_id_int = None
+                if best_match_criminal_id:
+                    try:
+                        criminal_id_int = int(best_match_criminal_id)
+                    except (ValueError, TypeError):
+                        criminal_id_int = None
+                
                 cur.execute("""
                     INSERT INTO facial_recognition_logs 
-                    (uploaded_image_url, uploaded_image_hash, face_detected, face_count, face_quality,
-                     matches_found, best_match_criminal_id, best_match_similarity, all_matches,
-                     processing_time_ms, requested_by, user_role, ip_address, case_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (analysis_type, uploaded_image_url, uploaded_image_hash, face_detected, face_count, 
+                     face_quality, matches_found, best_match_criminal_id, best_match_similarity, 
+                     match_threshold, all_matches, processing_time_ms, model_version, 
+                     requested_by, user_role, case_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING log_id
                 """, (
-                    uploaded_image_url, uploaded_image_hash, face_detected, face_count, face_quality,
-                    matches_found, best_match_criminal_id, best_match_similarity,
-                    json.dumps(all_matches), processing_time_ms, requested_by, user_role,
-                    ip_address, case_id
+                    'face_recognition',  # analysis_type
+                    uploaded_image_url, 
+                    uploaded_image_hash, 
+                    face_detected, 
+                    face_count, 
+                    face_quality,
+                    matches_found, 
+                    criminal_id_int,  # best_match_criminal_id as integer
+                    best_match_similarity,
+                    match_threshold,  # match_threshold
+                    json.dumps(all_matches), 
+                    processing_time_ms, 
+                    'buffalo_sc',  # model_version
+                    user_id_int,  # requested_by as integer
+                    user_role,
+                    case_id
                 ))
                 result = cur.fetchone()
                 return result['log_id']
