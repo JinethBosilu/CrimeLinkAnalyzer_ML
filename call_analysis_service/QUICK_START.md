@@ -14,7 +14,8 @@ cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service"
 pip install fastapi uvicorn python-multipart pydantic PyPDF2 networkx psycopg python-dotenv
 
 # 3. Start service
-python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
+
+cd 
 ```
 
 **Done!** Open: http://localhost:5001/docs
@@ -91,3 +92,4 @@ python -m uvicorn app_fastapi:app --port 5001 --reload
 ---
 
 **That's it! You're ready to go!** 🚀
+.\venv\Scripts\activate
