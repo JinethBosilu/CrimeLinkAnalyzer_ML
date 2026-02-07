@@ -24,13 +24,15 @@ def parse_call_records(pdf_path):
     call_records = []
     main_number = None
     skipped_lines = 0
+    full_text = ""
     
     try:
         with open(pdf_path, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
             
             for page_num, page in enumerate(pdf_reader.pages):
-                text = page.extract_text()
+                text = page.extract_text() or ""
+                full_text += text + "\n"
                 lines = text.split('\n')
                 
                 for line in lines:
@@ -70,6 +72,12 @@ def parse_call_records(pdf_path):
             if 'main_number' not in record or not record['main_number']:
                 record['main_number'] = main_number
     
+    # Attach location data if not already present
+    has_location = any(r.get("location") for r in call_records)
+    if not has_location:
+        cell_rows = extract_cell_table_rows(full_text)
+        call_records = attach_locations_by_row_index(call_records, cell_rows)
+    
     print(f"DEBUG: Parsed {len(call_records)} records, skipped {skipped_lines} potential lines, main number: {main_number}")
     
     return call_records
@@ -90,12 +98,21 @@ def extract_call_data(line):
     
     # Pattern 4: Sri Lankan CDR table format with | separators
     # Format: | msison | a_number | b_number | event_type | date | time | duration | ...
-    pattern4_table = r'\|\s*(\d{9,11})\s*\|\s*(\d{9,11})\s*\|\s*(\d{9,11})\s*\|\s*(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\d+)'
+    pattern4_table = r'\|\s*(\d{9,15})\s*\|\s*(\d{9,15})\s*\|\s*(\d{9,15})\s*\|\s*(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\d+)'
+    
+    # Pattern 6 (FULL row with Cell ID + Call Name) — MUST RUN BEFORE pattern5
+    # msison a_number b_number event_type date time duration cell_id call_name
+    pattern6_full = (
+        r'(\+?\d{9,15})[\s\t]+(\+?\d{9,15})[\s\t]+(\+?\d{9,15})[\s\t]+'
+        r'(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)[\s\t]+'
+        r'(\d{4}-\d{2}-\d{2})[\s\t]+(\d{2}:\d{2}:\d{2})[\s\t]+'
+        r'(\d+)[\s\t]+(\d+)[\s\t]+([^\s]+)'
+    )
     
     # Pattern 5: Sri Lankan format with tabs or multiple spaces (common in PDFs)
     # Format: msison\ta_number\tb_number\tevent_type\tdate\ttime\tduration
     # Also handles space-separated: msison  a_number  b_number  event_type  date  time  duration
-    pattern5_tabs = r'(\d{9,11})[\s\t]+(\d{9,11})[\s\t]+(\d{9,11})[\s\t]+(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)[\s\t]+(\d{4}-\d{2}-\d{2})[\s\t]+(\d{2}:\d{2}:\d{2})[\s\t]+(\d+)'
+    pattern5_tabs = r'(\d{9,15})[\s\t]+(\d{9,15})[\s\t]+(\d{9,15})[\s\t]+(Incoming|Outgoing|Missed|incoming|outgoing|missed|INCOMING|OUTGOING|MISSED)[\s\t]+(\d{4}-\d{2}-\d{2})[\s\t]+(\d{2}:\d{2}:\d{2})[\s\t]+(\d+)'
     
     match = re.search(pattern1, line)
     if match:
@@ -172,6 +189,37 @@ def extract_call_data(line):
             'call_type': event_type,
             'duration': duration,
             'main_number': msison
+        }
+    
+    # Pattern 6 (FULL) - with Cell ID and Location
+    match = re.search(pattern6_full, line)
+    if match:
+        msison = match.group(1)
+        a_number = match.group(2)
+        b_number = match.group(3)
+        event_type = match.group(4)
+        date = match.group(5)
+        time = match.group(6)
+        duration_seconds = int(match.group(7))
+        cell_id = match.group(8)
+        call_name = match.group(9)  # location
+        
+        hours = duration_seconds // 3600
+        minutes = (duration_seconds % 3600) // 60
+        seconds = duration_seconds % 60
+        duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        timestamp = f"{date}T{time}"
+        
+        other_party = a_number if event_type.lower() == "incoming" else b_number
+        
+        return {
+            "timestamp": timestamp,
+            "phone_number": other_party,
+            "call_type": event_type,
+            "duration": duration,
+            "main_number": msison,
+            "cell_id": cell_id,
+            "location": call_name,  # IMPORTANT
         }
     
     # Pattern 5: Sri Lankan format with tabs/spaces (most common in PDF tables)
@@ -262,3 +310,36 @@ def detect_call_direction(call_type):
         return 'missed'
     else:
         return 'unknown'
+
+
+def extract_cell_table_rows(full_text: str):
+    """
+    Extracts cell tower info from separate table: Cell ID  Call Name  IMEI  IMSI
+    Example line: 46066 Urubokka2 324633636720 43772005848
+    """
+    rows = []
+    for raw in full_text.splitlines():
+        line = raw.strip()
+        m = re.match(r'^(\d{4,6})\s+([A-Za-z0-9_\-]+)\s+\d+\s+\d+\s*$', line)
+        if m:
+            rows.append({"cell_id": m.group(1), "location": m.group(2)})
+    return rows
+
+
+def attach_locations_by_row_index(call_records: list, cell_rows: list):
+    """
+    If the PDF keeps call rows on page1 and cell table rows on page2,
+    and both counts match, attach location to each call row by index.
+    """
+    if not call_records or not cell_rows:
+        return call_records
+
+    # only attach if counts match
+    if len(call_records) != len(cell_rows):
+        return call_records
+
+    for i in range(len(call_records)):
+        call_records[i]["cell_id"] = cell_rows[i]["cell_id"]
+        call_records[i]["location"] = cell_rows[i]["location"]
+
+    return call_records

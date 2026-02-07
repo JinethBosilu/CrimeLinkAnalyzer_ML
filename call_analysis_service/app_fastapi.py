@@ -31,6 +31,7 @@ from utils.pdf_parser import parse_call_records
 from utils.network_analyzer import analyze_call_network
 from utils.database import get_criminal_info
 from utils.session_manager import session_manager
+from utils.location_analyzer import compute_location_periods
 
 # Configure logging
 logging.basicConfig(
@@ -88,6 +89,20 @@ class CriminalMatch(BaseModel):
     crime_history: List[str]
 
 
+class LocationPeriod(BaseModel):
+    """Cell tower location with time period"""
+    location: str
+    start: str
+    end: str
+    count: int
+
+
+class LocationAnalysis(BaseModel):
+    """Location analysis result"""
+    gap_minutes: int = 180
+    locations: List[LocationPeriod] = Field(default_factory=list)
+
+
 class AnalysisResult(BaseModel):
     """Complete analysis result for single PDF"""
     pdf_filename: str
@@ -103,6 +118,7 @@ class AnalysisResult(BaseModel):
     common_contacts: List[Dict]
     criminal_matches: List[CriminalMatch]
     risk_score: int = Field(..., ge=0, le=100, description="Risk score (0-100)")
+    location_analysis: LocationAnalysis = Field(default_factory=LocationAnalysis)
     
     class Config:
         arbitrary_types_allowed = True
@@ -284,6 +300,9 @@ async def analyze_batch(files: List[UploadFile] = File(..., description="Multipl
                 # Calculate risk score
                 risk_score = calculate_risk_score(analysis, criminal_matches)
                 
+                # Compute location periods from call records
+                location_analysis = compute_location_periods(call_records, gap_minutes=180)
+                
                 # Prepare analysis result
                 analysis_result = {
                     'pdf_filename': file.filename,
@@ -298,7 +317,8 @@ async def analyze_batch(files: List[UploadFile] = File(..., description="Multipl
                     'time_pattern': analysis['time_pattern'],
                     'common_contacts': analysis['common_contacts'],
                     'criminal_matches': criminal_matches,
-                    'risk_score': risk_score
+                    'risk_score': risk_score,
+                    'location_analysis': location_analysis
                 }
                 
                 analyses.append(analysis_result)

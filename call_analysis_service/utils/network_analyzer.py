@@ -103,7 +103,7 @@ def build_directional_graph(call_records, main_number, direction):
     Returns:
         {
             'nodes': [{id, label, type, size, color, call_count}],
-            'edges': [{source, target, call_count, label}],
+            'edges': [{source, target, call_count, label, locations, location_counts}],
             'total_nodes': int,
             'total_edges': int,
             'total_calls': int
@@ -118,13 +118,18 @@ def build_directional_graph(call_records, main_number, direction):
             'total_calls': 0
         }
     
-    # Count calls per contact (handles duplicates automatically)
+    # Count calls per contact and track call counts per location
     contact_counts = defaultdict(int)
+    contact_location_counts = defaultdict(lambda: defaultdict(int))  # {phone: {location: count}}
+    
     for record in call_records:
         try:
             phone = record.get('phone_number')
             if phone and phone != main_number:
                 contact_counts[phone] += 1
+                # Track location counts
+                location = record.get('location') or 'Unknown'
+                contact_location_counts[phone][location] += 1
         except Exception as e:
             print(f"DEBUG: Error counting call for record: {str(e)}")
             continue
@@ -158,6 +163,10 @@ def build_directional_graph(call_records, main_number, direction):
         # Node size based on call frequency (min 20, max 45)
         node_size = min(20 + (call_count * 2), 45)
         
+        # Get location counts for this contact
+        location_counts = dict(contact_location_counts.get(phone, {}))
+        locations = list(location_counts.keys())
+        
         nodes.append({
             'id': phone,
             'label': phone,
@@ -167,7 +176,7 @@ def build_directional_graph(call_records, main_number, direction):
             'call_count': call_count
         })
         
-        # Create edge with call count label
+        # Create edge with call count label and location counts
         if direction == 'incoming':
             # Arrow points FROM contact TO main number
             edges.append({
@@ -176,7 +185,9 @@ def build_directional_graph(call_records, main_number, direction):
                 'call_count': call_count,
                 'label': str(call_count),
                 'color': edge_color,
-                'width': min(1 + (call_count * 0.5), 10)
+                'width': min(1 + (call_count * 0.5), 10),
+                'locations': locations,
+                'location_counts': location_counts
             })
         else:  # outgoing
             # Arrow points FROM main number TO contact
@@ -186,7 +197,9 @@ def build_directional_graph(call_records, main_number, direction):
                 'call_count': call_count,
                 'label': str(call_count),
                 'color': edge_color,
-                'width': min(1 + (call_count * 0.5), 10)
+                'width': min(1 + (call_count * 0.5), 10),
+                'locations': locations,
+                'location_counts': location_counts
             })
     
     return {
