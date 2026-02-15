@@ -1,4 +1,3 @@
-import networkx as nx
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -104,7 +103,7 @@ def build_directional_graph(call_records, main_number, direction):
     Returns:
         {
             'nodes': [{id, label, type, size, color, call_count}],
-            'edges': [{source, target, call_count, label}],
+            'edges': [{source, target, call_count, label, locations, location_counts}],
             'total_nodes': int,
             'total_edges': int,
             'total_calls': int
@@ -119,13 +118,18 @@ def build_directional_graph(call_records, main_number, direction):
             'total_calls': 0
         }
     
-    # Count calls per contact (handles duplicates automatically)
+    # Count calls per contact and track call counts per location
     contact_counts = defaultdict(int)
+    contact_location_counts = defaultdict(lambda: defaultdict(int))  # {phone: {location: count}}
+    
     for record in call_records:
         try:
             phone = record.get('phone_number')
             if phone and phone != main_number:
                 contact_counts[phone] += 1
+                # Track location counts
+                location = record.get('location') or 'Unknown'
+                contact_location_counts[phone][location] += 1
         except Exception as e:
             print(f"DEBUG: Error counting call for record: {str(e)}")
             continue
@@ -159,6 +163,10 @@ def build_directional_graph(call_records, main_number, direction):
         # Node size based on call frequency (min 20, max 45)
         node_size = min(20 + (call_count * 2), 45)
         
+        # Get location counts for this contact
+        location_counts = dict(contact_location_counts.get(phone, {}))
+        locations = list(location_counts.keys())
+        
         nodes.append({
             'id': phone,
             'label': phone,
@@ -168,7 +176,7 @@ def build_directional_graph(call_records, main_number, direction):
             'call_count': call_count
         })
         
-        # Create edge with call count label
+        # Create edge with call count label and location counts
         if direction == 'incoming':
             # Arrow points FROM contact TO main number
             edges.append({
@@ -177,7 +185,9 @@ def build_directional_graph(call_records, main_number, direction):
                 'call_count': call_count,
                 'label': str(call_count),
                 'color': edge_color,
-                'width': min(1 + (call_count * 0.5), 10)
+                'width': min(1 + (call_count * 0.5), 10),
+                'locations': locations,
+                'location_counts': location_counts
             })
         else:  # outgoing
             # Arrow points FROM main number TO contact
@@ -187,7 +197,9 @@ def build_directional_graph(call_records, main_number, direction):
                 'call_count': call_count,
                 'label': str(call_count),
                 'color': edge_color,
-                'width': min(1 + (call_count * 0.5), 10)
+                'width': min(1 + (call_count * 0.5), 10),
+                'locations': locations,
+                'location_counts': location_counts
             })
     
     return {
@@ -198,131 +210,3 @@ def build_directional_graph(call_records, main_number, direction):
         'total_calls': len(call_records)
     }
 
-
-def build_network_graph(call_records):
-    """
-    DEPRECATED: Legacy function for backward compatibility
-    Use build_directional_graph instead for separate incoming/outgoing graphs
-    """
-    if not call_records:
-        return {
-            'nodes': [],
-            'edges': [],
-            'total_nodes': 0,
-            'total_edges': 0,
-            'density': 0,
-            'main_number': None
-        }
-    
-    # Get main number (MSISON) from first record if available
-    main_number = call_records[0].get('main_number')
-    if not main_number:
-        # Fallback: use most frequent number
-        phone_counts = Counter([r['phone_number'] for r in call_records])
-        main_number = phone_counts.most_common(1)[0][0] if phone_counts else None
-    
-    if not main_number:
-        return {
-            'nodes': [],
-            'edges': [],
-            'total_nodes': 0,
-            'total_edges': 0,
-            'density': 0,
-            'main_number': None
-        }
-    
-    # Separate incoming and outgoing calls
-    incoming_calls = defaultdict(int)
-    outgoing_calls = defaultdict(int)
-    
-    for record in call_records:
-        phone = record['phone_number']
-        if phone == main_number:
-            continue
-            
-        if record['call_type'] == 'Incoming':
-            incoming_calls[phone] += 1
-        elif record['call_type'] == 'Outgoing':
-            outgoing_calls[phone] += 1
-    
-    # Build nodes
-    nodes = []
-    edges = []
-    
-    # Add main number as center node
-    nodes.append({
-        'id': main_number,
-        'label': main_number,
-        'type': 'main',
-        'size': 40,
-        'color': '#3b82f6',  # Blue for main
-        'borderWidth': 3,
-        'centrality': 1.0
-    })
-    
-    # Add other numbers with different colors for incoming/outgoing
-    all_phones = set(incoming_calls.keys()) | set(outgoing_calls.keys())
-    
-    for phone in all_phones:
-        incoming_count = incoming_calls.get(phone, 0)
-        outgoing_count = outgoing_calls.get(phone, 0)
-        total_count = incoming_count + outgoing_count
-        
-        # Determine node color based on call type dominance
-        if incoming_count > outgoing_count:
-            node_color = '#10b981'  # Green for mostly incoming
-            node_type = 'incoming'
-        elif outgoing_count > incoming_count:
-            node_color = '#ef4444'  # Red for mostly outgoing
-            node_type = 'outgoing'
-        else:
-            node_color = '#8b5cf6'  # Purple for balanced
-            node_type = 'both'
-        
-        nodes.append({
-            'id': phone,
-            'label': phone,
-            'type': node_type,
-            'size': 15 + min(total_count * 2, 25),
-            'color': node_color,
-            'incoming_count': incoming_count,
-            'outgoing_count': outgoing_count,
-            'centrality': total_count / max(len(call_records), 1)
-        })
-        
-        # Create edges for incoming calls (arrow TO main number)
-        if incoming_count > 0:
-            edges.append({
-                'source': phone,
-                'target': main_number,
-                'weight': incoming_count,
-                'type': 'incoming',
-                'color': '#10b981',
-                'label': f"{incoming_count} incoming",
-                'arrows': 'to'
-            })
-        
-        # Create edges for outgoing calls (arrow FROM main number)
-        if outgoing_count > 0:
-            edges.append({
-                'source': main_number,
-                'target': phone,
-                'weight': outgoing_count,
-                'type': 'outgoing',
-                'color': '#ef4444',
-                'label': f"{outgoing_count} outgoing",
-                'arrows': 'to'
-            })
-    
-    # Calculate density
-    total_possible_edges = len(nodes) * (len(nodes) - 1)
-    density = len(edges) / total_possible_edges if total_possible_edges > 0 else 0
-    
-    return {
-        'nodes': nodes,
-        'edges': edges,
-        'total_nodes': len(nodes),
-        'total_edges': len(edges),
-        'main_number': main_number,
-        'density': density
-    }

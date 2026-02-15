@@ -8,10 +8,10 @@
 
 ```powershell
 # 1. Navigate to service
-cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service"
+cd "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service"
 
 # 2. Install dependencies (first time only)
-pip install fastapi uvicorn python-multipart pydantic PyPDF2 networkx psycopg python-dotenv
+pip install -r requirements_fastapi.txt
 
 # 3. Start service
 python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
@@ -25,12 +25,12 @@ python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
 
 ### Windows PowerShell:
 ```powershell
-cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service" ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
+cd "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service" ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
 ```
 
 ### First Time Setup (One Command):
 ```powershell
-cd "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service" ; pip install fastapi uvicorn python-multipart pydantic PyPDF2 networkx psycopg python-dotenv ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
+cd "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service" ; pip install -r requirements_fastapi.txt ; python -m uvicorn app_fastapi:app --host 0.0.0.0 --port 5001 --reload
 ```
 
 ---
@@ -85,8 +85,8 @@ python -m uvicorn app_fastapi:app --port 5001 --reload
 
 1. ✅ Service running? Go to http://localhost:5001/docs
 2. ✅ Try the **GET /health** endpoint (click "Try it out")
-3. ✅ Upload a PDF using **POST /analyze** endpoint
-4. ✅ Read full documentation: `FASTAPI_MIGRATION_GUIDE.md`
+3. ✅ Upload PDFs using **POST /analyze/batch** endpoint
+4. ✅ Get session results via **GET /analysis/{session_id}**
 
 ---
 

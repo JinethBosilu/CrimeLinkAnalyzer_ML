@@ -1,0 +1,25 @@
+# Facial Recognition Service - Dependencies
+
+# FastAPI Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Supabase Client (for Storage)
+supabase==2.3.4
+
+# Database
+psycopg2-binary==2.9.9
+
+# Face Recognition
+insightface==0.7.3
+onnxruntime==1.16.3
+opencv-python-headless==4.9.0.80
+numpy==1.26.3
+
+# Image Processing
+Pillow==10.2.0
+
+# Utilities
+python-dotenv==1.0.0
+httpx==0.26.0
