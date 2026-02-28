@@ -92,7 +92,7 @@ class Database:
                         criminal_id VARCHAR(100) REFERENCES criminals(id) ON DELETE CASCADE,
                         photo_url VARCHAR(500) NOT NULL,
                         photo_hash VARCHAR(64),
-                        embedding JSONB,
+                        face_embedding JSONB,
                         face_confidence FLOAT,
                         face_bbox JSONB,
                         photo_quality FLOAT,
@@ -201,7 +201,7 @@ class Database:
         embedding: List[float],
         face_confidence: float = 0.0,
         face_bbox: Optional[Dict] = None,
-        photo_quality: float = 0.0,
+        photo_quality: str = 'medium',
         image_width: int = 0,
         image_height: int = 0,
         file_size_bytes: int = 0,
@@ -223,7 +223,7 @@ class Database:
                 
                 cur.execute("""
                     INSERT INTO suspect_photos 
-                    (criminal_id, photo_url, photo_hash, embedding, face_confidence, face_bbox,
+                    (criminal_id, photo_url, photo_hash, face_embedding, face_confidence, face_bbox,
                      photo_quality, image_width, image_height, file_size_bytes, is_primary)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING photo_id
@@ -253,10 +253,18 @@ class Database:
                     if row['face_embedding']:
                         embedding_data = row['face_embedding']
                         
-                        # Handle memoryview/bytes (BYTEA format - numpy array bytes)
+                        # Handle memoryview/bytes (could be raw float32 or JSON text stored as BYTEA)
                         if isinstance(embedding_data, (memoryview, bytes)):
                             raw_bytes = bytes(embedding_data)
-                            row['face_embedding'] = np.frombuffer(raw_bytes, dtype=np.float32).tolist()
+                            # Try JSON text first (json.dumps stored into BYTEA column)
+                            try:
+                                row['face_embedding'] = json.loads(raw_bytes.decode('utf-8'))
+                            except (UnicodeDecodeError, json.JSONDecodeError):
+                                # Fall back to raw numpy float32 binary
+                                if len(raw_bytes) % 4 == 0:
+                                    row['face_embedding'] = np.frombuffer(raw_bytes, dtype=np.float32).tolist()
+                                else:
+                                    row['face_embedding'] = None
                         # Handle string (JSON format)
                         elif isinstance(embedding_data, str):
                             row['face_embedding'] = json.loads(embedding_data)
