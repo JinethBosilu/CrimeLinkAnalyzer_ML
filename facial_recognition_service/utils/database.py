@@ -139,7 +139,12 @@ class Database:
         crime_history: Optional[str] = None,
         risk_level: str = 'medium',
         address: Optional[str] = None,
-        contact_number: Optional[str] = None
+        contact_number: Optional[str] = None,
+        secondary_contact: Optional[str] = None,
+        date_of_birth: Optional[str] = None,
+        gender: Optional[str] = None,
+        alias: Optional[str] = None,
+        status: str = 'active'
     ) -> str:
         """
         Create a new criminal record.
@@ -153,10 +158,16 @@ class Database:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO criminals (id, name, nic, crime_history, risk_level, address, contact_number, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
+                    INSERT INTO criminals (
+                        id, name, nic, crime_history, risk_level, address,
+                        contact_number, secondary_contact, date_of_birth, gender, alias, status
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
-                """, (criminal_id, name, nic, crime_history, risk_level, address, contact_number))
+                """, (
+                    criminal_id, name, nic, crime_history, risk_level, address,
+                    contact_number, secondary_contact, date_of_birth, gender, alias, status
+                ))
                 result = cur.fetchone()
                 return result['id']
     

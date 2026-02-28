@@ -467,6 +467,13 @@ async def register_criminal(
     nic: str = Form(..., description="National Identity Card number"),
     risk_level: str = Form("medium", description="low, medium, high, or critical"),
     crime_history: Optional[str] = Form(None, description="Crime history text"),
+    address: Optional[str] = Form(None, description="Criminal address"),
+    contact_number: Optional[str] = Form(None, description="Contact phone number"),
+    secondary_contact: Optional[str] = Form(None, description="Secondary contact number"),
+    date_of_birth: Optional[str] = Form(None, description="Date of birth (YYYY-MM-DD)"),
+    gender: Optional[str] = Form(None, description="Gender (Male/Female/Other)"),
+    alias: Optional[str] = Form(None, description="Known alias"),
+    status: Optional[str] = Form("active", description="Status (active/inactive/archived)"),
     photos: List[UploadFile] = File(..., description="Criminal photos (1-5 images)")
 ):
     """
@@ -480,6 +487,13 @@ async def register_criminal(
         nic: NIC number
         risk_level: Risk level (low/medium/high/critical)
         crime_history: Optional crime history
+        address: Optional address
+        contact_number: Optional phone number
+        secondary_contact: Optional secondary phone
+        date_of_birth: Optional date of birth
+        gender: Optional gender
+        alias: Optional alias
+        status: Status (default: active)
         photos: List of photos (1-5)
     
     Returns:
@@ -500,7 +514,14 @@ async def register_criminal(
             name=name,
             nic=nic,
             crime_history=crime_history,
-            risk_level=risk_level
+            risk_level=risk_level,
+            address=address,
+            contact_number=contact_number,
+            secondary_contact=secondary_contact,
+            date_of_birth=date_of_birth,
+            gender=gender,
+            alias=alias,
+            status=status or 'active'
         )
         
         logger.info(f"Created criminal record: {criminal_id}")
