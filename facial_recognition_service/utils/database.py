@@ -299,6 +299,13 @@ class Database:
             embedding = c.get('face_embedding')
             if embedding:
                 import numpy as np
+                # Parse crime_history if it's a raw JSON string from TEXT column
+                raw_ch = c.get('crime_history')
+                if raw_ch and isinstance(raw_ch, str):
+                    try:
+                        raw_ch = json.loads(raw_ch)
+                    except (json.JSONDecodeError, TypeError):
+                        pass  # keep original string — will be handled in caller
                 result.append({
                     'criminal_id': c['id'],
                     'name': c.get('name', 'Unknown'),
@@ -306,7 +313,7 @@ class Database:
                     'embedding': np.array(embedding, dtype=np.float32),
                     'photo_url': c.get('primary_photo_url'),
                     'risk_level': c.get('risk_level'),
-                    'crime_history': c.get('crime_history'),
+                    'crime_history': raw_ch,
                 })
         
         return result

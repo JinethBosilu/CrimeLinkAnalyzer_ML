@@ -370,31 +370,55 @@ async def analyze_suspect(
         # Format matches for response
         match_results = []
         for match in matches:
-            # Parse crime_history - pass it directly if already formatted, or format it
+            # Parse crime_history — handle string (TEXT column), dict (JSONB), or list
             crime_history = match.get('crime_history')
             formatted_crime_history = None
-            
-            if crime_history and isinstance(crime_history, dict):
-                # Check if it's already in the expected format (has total_crimes)
-                if 'total_crimes' in crime_history:
-                    # Already formatted from database
-                    formatted_crime_history = {
-                        "total_crimes": crime_history.get('total_crimes', 0),
-                        "last_crime_date": crime_history.get('last_crime_date'),
-                        "crime_types": crime_history.get('crime_types', []),
-                        "records": crime_history.get('records', [])[:5]  # Limit to 5 most recent
+
+            # Step 1: If it's a JSON string, parse it into a dict/list first
+            if crime_history and isinstance(crime_history, str):
+                try:
+                    crime_history = json.loads(crime_history)
+                except (json.JSONDecodeError, TypeError):
+                    # Plain text — wrap as a single record
+                    crime_history = {
+                        "records": [{"type": "Unknown", "date": "", "location": "", "description": crime_history}],
+                        "total_crimes": 1,
+                        "crime_types": ["Unknown"],
+                        "last_crime_date": ""
                     }
-                elif 'records' in crime_history:
-                    # Needs formatting
-                    records = crime_history.get('records', [])
+
+            # Step 2: Normalize into dict with records/total_crimes/crime_types/last_crime_date
+            if crime_history and isinstance(crime_history, list):
+                # Bare array of record objects
+                records = crime_history
+                crime_types = list(set(r.get('type', '') for r in records if r.get('type')))
+                dates = sorted([r.get('date', '') for r in records if r.get('date')], reverse=True)
+                crime_history = {
+                    "records": records,
+                    "total_crimes": len(records),
+                    "crime_types": crime_types,
+                    "last_crime_date": dates[0] if dates else ""
+                }
+
+            if crime_history and isinstance(crime_history, dict):
+                records = crime_history.get('records', [])
+                if not isinstance(records, list):
+                    records = []
+                crime_types = crime_history.get('crime_types', [])
+                if not crime_types:
                     crime_types = list(set(r.get('type', '') for r in records if r.get('type')))
-                    last_crime_date = records[0].get('date') if records else None
-                    
+                last_crime_date = crime_history.get('last_crime_date', '')
+                if not last_crime_date and records:
+                    dates = sorted([r.get('date', '') for r in records if r.get('date')], reverse=True)
+                    last_crime_date = dates[0] if dates else ''
+                total_crimes = crime_history.get('total_crimes', len(records))
+
+                if records or total_crimes > 0:
                     formatted_crime_history = {
-                        "total_crimes": len(records),
+                        "total_crimes": total_crimes,
                         "last_crime_date": last_crime_date,
                         "crime_types": crime_types,
-                        "records": records[:5]
+                        "records": records[:5]  # Limit to 5 most recent
                     }
             
             match_results.append({
