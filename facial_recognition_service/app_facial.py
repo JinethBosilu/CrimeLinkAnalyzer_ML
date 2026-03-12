@@ -370,31 +370,55 @@ async def analyze_suspect(
         # Format matches for response
         match_results = []
         for match in matches:
-            # Parse crime_history - pass it directly if already formatted, or format it
+            # Parse crime_history — handle string (TEXT column), dict (JSONB), or list
             crime_history = match.get('crime_history')
             formatted_crime_history = None
-            
-            if crime_history and isinstance(crime_history, dict):
-                # Check if it's already in the expected format (has total_crimes)
-                if 'total_crimes' in crime_history:
-                    # Already formatted from database
-                    formatted_crime_history = {
-                        "total_crimes": crime_history.get('total_crimes', 0),
-                        "last_crime_date": crime_history.get('last_crime_date'),
-                        "crime_types": crime_history.get('crime_types', []),
-                        "records": crime_history.get('records', [])[:5]  # Limit to 5 most recent
+
+            # Step 1: If it's a JSON string, parse it into a dict/list first
+            if crime_history and isinstance(crime_history, str):
+                try:
+                    crime_history = json.loads(crime_history)
+                except (json.JSONDecodeError, TypeError):
+                    # Plain text — wrap as a single record
+                    crime_history = {
+                        "records": [{"type": "Unknown", "date": "", "location": "", "description": crime_history}],
+                        "total_crimes": 1,
+                        "crime_types": ["Unknown"],
+                        "last_crime_date": ""
                     }
-                elif 'records' in crime_history:
-                    # Needs formatting
-                    records = crime_history.get('records', [])
+
+            # Step 2: Normalize into dict with records/total_crimes/crime_types/last_crime_date
+            if crime_history and isinstance(crime_history, list):
+                # Bare array of record objects
+                records = crime_history
+                crime_types = list(set(r.get('type', '') for r in records if r.get('type')))
+                dates = sorted([r.get('date', '') for r in records if r.get('date')], reverse=True)
+                crime_history = {
+                    "records": records,
+                    "total_crimes": len(records),
+                    "crime_types": crime_types,
+                    "last_crime_date": dates[0] if dates else ""
+                }
+
+            if crime_history and isinstance(crime_history, dict):
+                records = crime_history.get('records', [])
+                if not isinstance(records, list):
+                    records = []
+                crime_types = crime_history.get('crime_types', [])
+                if not crime_types:
                     crime_types = list(set(r.get('type', '') for r in records if r.get('type')))
-                    last_crime_date = records[0].get('date') if records else None
-                    
+                last_crime_date = crime_history.get('last_crime_date', '')
+                if not last_crime_date and records:
+                    dates = sorted([r.get('date', '') for r in records if r.get('date')], reverse=True)
+                    last_crime_date = dates[0] if dates else ''
+                total_crimes = crime_history.get('total_crimes', len(records))
+
+                if records or total_crimes > 0:
                     formatted_crime_history = {
-                        "total_crimes": len(records),
+                        "total_crimes": total_crimes,
                         "last_crime_date": last_crime_date,
                         "crime_types": crime_types,
-                        "records": records[:5]
+                        "records": records[:5]  # Limit to 5 most recent
                     }
             
             match_results.append({
@@ -411,21 +435,25 @@ async def analyze_suspect(
         # Calculate processing time
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
         
-        # Log request to database
-        analysis_id = database.log_recognition_request(
-            uploaded_image_url="temp_upload",
-            uploaded_image_hash=file_hash,
-            face_detected=True,
-            face_count=face_count,
-            face_quality=quality,
-            matches_found=len(match_results),
-            best_match_criminal_id=match_results[0]['criminal_id'] if match_results else None,
-            best_match_similarity=match_results[0]['similarity'] if match_results else 0.0,
-            all_matches=match_results,
-            processing_time_ms=int(processing_time),
-            requested_by=user_id,
-            case_id=case_id
-        )
+        # Log request to database (non-fatal — FK schema may differ)
+        analysis_id = 0
+        try:
+            analysis_id = database.log_recognition_request(
+                uploaded_image_url="temp_upload",
+                uploaded_image_hash=file_hash,
+                face_detected=True,
+                face_count=face_count,
+                face_quality=quality,
+                matches_found=len(match_results),
+                best_match_criminal_id=match_results[0]['criminal_id'] if match_results else None,
+                best_match_similarity=match_results[0]['similarity'] if match_results else 0.0,
+                all_matches=match_results,
+                processing_time_ms=int(processing_time),
+                requested_by=user_id,
+                case_id=case_id
+            )
+        except Exception as log_err:
+            logger.warning(f"Could not log recognition request (non-fatal): {log_err}")
         
         logger.info(f"Analysis complete: {len(match_results)} matches found (threshold: {threshold}%)")
         
@@ -467,6 +495,13 @@ async def register_criminal(
     nic: str = Form(..., description="National Identity Card number"),
     risk_level: str = Form("medium", description="low, medium, high, or critical"),
     crime_history: Optional[str] = Form(None, description="Crime history text"),
+    address: Optional[str] = Form(None, description="Criminal address"),
+    contact_number: Optional[str] = Form(None, description="Contact phone number"),
+    secondary_contact: Optional[str] = Form(None, description="Secondary contact number"),
+    date_of_birth: Optional[str] = Form(None, description="Date of birth (YYYY-MM-DD)"),
+    gender: Optional[str] = Form(None, description="Gender (Male/Female/Other)"),
+    alias: Optional[str] = Form(None, description="Known alias"),
+    status: Optional[str] = Form("active", description="Status (active/inactive/archived)"),
     photos: List[UploadFile] = File(..., description="Criminal photos (1-5 images)")
 ):
     """
@@ -480,6 +515,13 @@ async def register_criminal(
         nic: NIC number
         risk_level: Risk level (low/medium/high/critical)
         crime_history: Optional crime history
+        address: Optional address
+        contact_number: Optional phone number
+        secondary_contact: Optional secondary phone
+        date_of_birth: Optional date of birth
+        gender: Optional gender
+        alias: Optional alias
+        status: Status (default: active)
         photos: List of photos (1-5)
     
     Returns:
@@ -500,7 +542,14 @@ async def register_criminal(
             name=name,
             nic=nic,
             crime_history=crime_history,
-            risk_level=risk_level
+            risk_level=risk_level,
+            address=address,
+            contact_number=contact_number,
+            secondary_contact=secondary_contact,
+            date_of_birth=date_of_birth,
+            gender=gender,
+            alias=alias,
+            status=status or 'active'
         )
         
         logger.info(f"Created criminal record: {criminal_id}")
@@ -619,6 +668,128 @@ async def register_criminal(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+
+class EmbeddingResponse(BaseModel):
+    """Response for embedding generation."""
+    criminal_id: str
+    has_embedding: bool
+    photos_processed: int
+    message: str
+
+
+@app.post("/generate-embedding", response_model=EmbeddingResponse)
+async def generate_embedding(
+    criminal_id: str = Form(..., description="Existing criminal ID"),
+    photo: UploadFile = File(..., description="Photo to generate embedding from")
+):
+    """
+    Generate a face embedding for an existing criminal record.
+    
+    This endpoint is called by Spring Boot after creating/updating a criminal
+    record. It extracts the face embedding from the provided photo and stores
+    it in the database. It does NOT create a new criminal record.
+    
+    Args:
+        criminal_id: The existing criminal's ID
+        photo: Photo file to extract embedding from
+    
+    Returns:
+        Confirmation with embedding status
+    """
+    temp_path = None
+    try:
+        # Validate photo
+        if not photo.content_type or not photo.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        logger.info(f"Generating embedding for criminal: {criminal_id}")
+        
+        # Read file bytes
+        file_bytes = await photo.read()
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        
+        # Save to temp file for processing
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            tmp.write(file_bytes)
+            temp_path = tmp.name
+        
+        # Extract embedding using InsightFace
+        result = face_analyzer.extract_embedding(image_path=temp_path)
+        
+        if result is None or result.get('embedding') is None:
+            logger.warning(f"No face detected in photo for criminal {criminal_id}")
+            return {
+                "criminal_id": criminal_id,
+                "has_embedding": False,
+                "photos_processed": 0,
+                "message": "No face detected in the provided photo"
+            }
+        
+        embedding = result['embedding']
+        confidence = result['confidence']
+        
+        # Upload to Supabase Storage (will overwrite if exists thanks to upsert)
+        storage_result = storage.upload_image(
+            file_path=temp_path,
+            criminal_id=criminal_id,
+            filename=f"embedding_{photo.filename}"
+        )
+        
+        photo_url = None
+        if storage_result:
+            photo_url = storage_result['url']
+            
+            # Store photo metadata in suspect_photos table (non-fatal — FK may differ)
+            try:
+                database.store_suspect_photo(
+                    criminal_id=criminal_id,
+                    photo_url=photo_url,
+                    photo_hash=file_hash,
+                    embedding=face_analyzer.embedding_to_list(embedding),
+                    face_confidence=confidence,
+                    face_bbox=result.get('bbox'),
+                    photo_quality='medium',
+                    image_width=result.get('image_dimensions', {}).get('width', 0),
+                    image_height=result.get('image_dimensions', {}).get('height', 0),
+                    file_size_bytes=len(file_bytes),
+                    is_primary=True
+                )
+            except Exception as sp_err:
+                logger.warning(f"Could not store suspect_photo for {criminal_id} (non-fatal): {sp_err}")
+        
+        # Store the embedding on the criminal record itself (this is the critical one)
+        database.update_criminal_embedding(
+            criminal_id=criminal_id,
+            embedding=face_analyzer.embedding_to_list(embedding),
+            primary_photo_url=photo_url
+        )
+        
+        logger.info(f"Embedding generated successfully for criminal {criminal_id}")
+        
+        return {
+            "criminal_id": criminal_id,
+            "has_embedding": True,
+            "photos_processed": 1,
+            "message": "Face embedding generated and stored successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Embedding generation failed for {criminal_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Embedding generation failed: {str(e)}"
+        )
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temp file: {str(e)}")
 
 
 @app.get("/criminals", response_model=List[CriminalInfo])
