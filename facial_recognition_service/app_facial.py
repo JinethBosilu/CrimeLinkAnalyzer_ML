@@ -52,14 +52,20 @@ app = FastAPI(
 )
 
 # CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+def _get_cors_origins() -> List[str]:
+    raw = os.getenv("CORS_ORIGINS")
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        return origins if origins else ["*"]
+    return [
         "http://localhost:5173",  # Vite frontend
         "http://localhost:8080",  # Spring Boot backend
-        "http://localhost:3000",  # Alternative frontend
-        "*"  # Allow all for development
-    ],
+        "http://localhost:3000"   # Alternative frontend
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

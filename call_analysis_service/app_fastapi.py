@@ -50,21 +50,28 @@ app = FastAPI(
 )
 
 # CORS Configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+def _get_cors_origins() -> List[str]:
+    raw = os.getenv("CORS_ORIGINS")
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        return origins if origins else ["*"]
+    return [
         "http://localhost:5173",  # React frontend
         "http://localhost:8080",  # Spring Boot backend
         "http://localhost:3000"   # Alternative frontend port
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Configuration
-UPLOAD_FOLDER = Path('uploads')
-UPLOAD_FOLDER.mkdir(exist_ok=True)
+UPLOAD_FOLDER = Path(os.getenv("UPLOAD_DIR", "uploads"))
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
 # File size limit (16MB)
 MAX_FILE_SIZE = 16 * 1024 * 1024
