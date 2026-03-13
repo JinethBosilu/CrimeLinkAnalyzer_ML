@@ -7,17 +7,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies required by OpenCV and InsightFace
+# Install system dependencies required by OpenCV, InsightFace, and health checks
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
         g++ \
-        libgl1-mesa-glx \
+        libgl1 \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
         libxrender-dev \
-        wget \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (better caching)
@@ -44,9 +44,9 @@ USER appuser
 # Expose port
 EXPOSE 5002
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:5002/health')" || exit 1
+# Health check using curl (reliable, no Python import issues)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -f http://localhost:5002/health || exit 1
 
 # Start FastAPI with Uvicorn
-CMD ["uvicorn", "app_facial:app", "--host", "0.0.0.0", "--port", "5002", "--workers", "2"]
+CMD ["uvicorn", "app_facial:app", "--host", "0.0.0.0", "--port", "5002"]
