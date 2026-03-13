@@ -1,0 +1,138 @@
+# =============================================
+# CrimeLink Analyzer - ML Services CI/CD
+# Repo: github.com/JinethBosilu/CrimeLinkAnalyzer_ML
+# Docker build → ECR → ECS Fargate
+# =============================================
+#
+# This uses ONE workflow with TWO conditional jobs.
+# Each job only runs when its service's files are modified.
+# Manual dispatch triggers both jobs.
+#
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#   AWS_REGION                          (e.g., ap-south-1)
+#   AWS_ACCOUNT_ID                      (12-digit AWS account ID)
+#   ECS_CLUSTER_NAME                    (e.g., crimelink-cluster)
+#   ECS_CALL_ANALYSIS_SERVICE_NAME      (e.g., crimelink-call-analysis-service)
+#   ECS_FACIAL_RECOGNITION_SERVICE_NAME (e.g., crimelink-facial-recognition-service)
+
+name: Deploy ML Services
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_call_analysis:
+        description: "Deploy Call Analysis Service"
+        required: false
+        type: boolean
+        default: true
+      deploy_facial_recognition:
+        description: "Deploy Facial Recognition Service"
+        required: false
+        type: boolean
+        default: true
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  # ─── Detect which services changed ──────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      call_analysis: ${{ steps.filter.outputs.call_analysis }}
+      facial_recognition: ${{ steps.filter.outputs.facial_recognition }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            call_analysis:
+              - 'call_analysis_service/**'
+            facial_recognition:
+              - 'facial_recognition_service/**'
+
+  # ─── Call Analysis Service ──────────────────
+  deploy-call-analysis:
+    name: Call Analysis → ECR → ECS
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.call_analysis == 'true' ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_call_analysis == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: call_analysis_service
+        run: |
+          docker build -t $ECR_REGISTRY/crimelink-call-analysis:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/crimelink-call-analysis:$IMAGE_TAG $ECR_REGISTRY/crimelink-call-analysis:latest
+          docker push $ECR_REGISTRY/crimelink-call-analysis:$IMAGE_TAG
+          docker push $ECR_REGISTRY/crimelink-call-analysis:latest
+
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ secrets.ECS_CLUSTER_NAME }} \
+            --service ${{ secrets.ECS_CALL_ANALYSIS_SERVICE_NAME }} \
+            --force-new-deployment
+
+  # ─── Facial Recognition Service ─────────────
+  deploy-facial-recognition:
+    name: Facial Recognition → ECR → ECS
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.facial_recognition == 'true' ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_facial_recognition == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: facial_recognition_service
+        run: |
+          docker build -t $ECR_REGISTRY/crimelink-facial-recognition:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/crimelink-facial-recognition:$IMAGE_TAG $ECR_REGISTRY/crimelink-facial-recognition:latest
+          docker push $ECR_REGISTRY/crimelink-facial-recognition:$IMAGE_TAG
+          docker push $ECR_REGISTRY/crimelink-facial-recognition:latest
+
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ secrets.ECS_CLUSTER_NAME }} \
+            --service ${{ secrets.ECS_FACIAL_RECOGNITION_SERVICE_NAME }} \
+            --force-new-deployment
