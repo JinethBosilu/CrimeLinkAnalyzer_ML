@@ -1,0 +1,14 @@
+# Facial Recognition Docker ignores
+venv
+__pycache__
+.git
+.env
+*.pyc
+uploads
+suspect_images
+*.log
+debug_db.py
+migrate_to_supabase.py
+test_api.py
+test_supabase_integration.py
+QUICK_START.md

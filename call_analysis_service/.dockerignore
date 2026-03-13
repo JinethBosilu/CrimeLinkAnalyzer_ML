@@ -1,0 +1,11 @@
+# Call Analysis Docker ignores
+venv
+__pycache__
+.git
+.env
+*.pyc
+uploads
+*.log
+start_fastapi.ps1
+QUICK_START.md
+requirements_fastapi.txt
