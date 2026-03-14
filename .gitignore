@@ -9,7 +9,8 @@ __pycache__/
 # Ignore uploaded files and results
 uploads/
 results/
-
+stored_images/
+direct_upload.py
 # Ignore environment variables
 .env
 

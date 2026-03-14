@@ -8,7 +8,7 @@ Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Navigate to service directory
-$servicePath = "d:\Project\Final Project\Project\CrimeLinkAnalyzer_ML\call_analysis_service"
+$servicePath = "d:\Project\Final Project\Project\Crimelink_Analyzer\CrimeLinkAnalyzer_ML\call_analysis_service"
 Set-Location $servicePath
 
 Write-Host "📁 Working directory: $servicePath" -ForegroundColor Yellow

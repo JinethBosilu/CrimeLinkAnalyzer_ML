@@ -1,5 +1,5 @@
 # CrimeLink Analyzer - ML Services Requirements
-# Updated: November 30, 2025
+# Updated: February 1, 2026
 # FastAPI-based microservices architecture
 
 # ============= Core Framework =============
@@ -15,27 +15,14 @@ pydantic-settings==2.1.0            # Settings management
 PyPDF2==3.0.1                       # PDF parsing
 pdfplumber==0.10.3                  # Alternative PDF parser (better for tables)
 
-# ============= Network Analysis =============
-networkx==3.2.1                     # Graph analysis and network metrics
-
 # ============= Database =============
 psycopg[binary]>=3.2.2              # PostgreSQL driver
-sqlalchemy==2.0.23                  # ORM (optional, for complex queries)
 
 # ============= Environment & Config =============
 python-dotenv==1.0.0                # Environment variables
 
-# ============= Caching & Session (Production) =============
-redis==5.0.1                        # Cache and session storage
-aioredis==2.0.1                     # Async Redis client
-
-# ============= Logging & Monitoring =============
+# ============= Logging =============
 python-json-logger==2.0.7           # Structured JSON logging
-prometheus-fastapi-instrumentator==6.1.0  # Metrics for monitoring
-
-# ============= Security =============
-python-jose[cryptography]==3.3.0    # JWT token validation
-passlib[bcrypt]==1.7.4              # Password hashing (if needed)
 
 # ============= HTTP Requests =============
 httpx==0.25.2                       # Async HTTP client
