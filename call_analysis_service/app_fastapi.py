@@ -49,14 +49,16 @@ app = FastAPI(
     redoc_url="/redoc"  # ReDoc UI
 )
 
-# CORS Configuration
+# CORS Configuration - read from environment variable
+cors_origins_str = os.environ.get("CORS_ORIGINS", "*")
+if cors_origins_str == "*":
+    cors_origins = ["*"]
+else:
+    cors_origins = [origin.strip() for origin in cors_origins_str.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # React frontend
-        "http://localhost:8080",  # Spring Boot backend
-        "http://localhost:3000"   # Alternative frontend port
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -492,7 +494,7 @@ async def startup_event():
     logger.info("=" * 60)
     logger.info(f"Version: 2.0.0")
     logger.info(f"Upload folder: {UPLOAD_FOLDER.absolute()}")
-    logger.info("API Documentation: http://localhost:5001/docs")
+    logger.info(f"API Documentation: http://0.0.0.0:{os.environ.get('PORT', '5001')}/docs")
     logger.info("Starting session cleanup thread (30 min timeout)...")
     session_manager.start_cleanup_thread()
     logger.info("=" * 60)
@@ -512,10 +514,11 @@ async def shutdown_event():
 if __name__ == '__main__':
     import uvicorn
     
+    port = int(os.environ.get("PORT", 5001))
     uvicorn.run(
         "app_fastapi:app",
         host="0.0.0.0",
-        port=5001,
-        reload=True,  # Auto-reload on code changes (dev only)
+        port=port,
+        reload=os.environ.get("FASTAPI_ENV", "development") == "development",
         log_level="info"
     )

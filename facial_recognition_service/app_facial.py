@@ -51,15 +51,16 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS configuration
+# CORS configuration - read from environment variable
+cors_origins_str = os.environ.get("CORS_ORIGINS", "*")
+if cors_origins_str == "*":
+    cors_origins = ["*"]
+else:
+    cors_origins = [origin.strip() for origin in cors_origins_str.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite frontend
-        "http://localhost:8080",  # Spring Boot backend
-        "http://localhost:3000",  # Alternative frontend
-        "*"  # Allow all for development
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -100,7 +101,7 @@ async def startup_event():
         
         logger.info("=" * 60)
         logger.info("Facial Recognition Service started successfully!")
-        logger.info("Docs: http://localhost:5002/docs")
+        logger.info(f"Docs: http://0.0.0.0:{os.environ.get('PORT', '5002')}/docs")
         logger.info("=" * 60)
         
     except Exception as e:
